@@ -40,14 +40,6 @@ src/           Future package home for stable reusable library code.
 tests/         Lightweight tests for stable code paths.
 ```
 
-Large local artifacts are intentionally excluded: FASTA files, metadata dumps, embeddings, distance matrices, graph edge lists, Dijkstra outputs, PTU outputs, model checkpoints, logs, caches, and temporary experiment folders.
-
-## Reproducibility Contract
-
-Tracked files should be enough to understand and rerun the scientific workflow, but not enough to reconstruct private or bulky local artifacts from Git alone.
-
-Use `data/manifests/` to document required local inputs, expected checksums when available, and the commands or scripts that generated derived artifacts. Use `experiments/` and `results/` for small summaries, final tables, and figures that support interpretation.
-
 ## Current Workflow Families
 
 1. **Representation preparation**
@@ -83,14 +75,3 @@ Install the core environment:
 ```bash
 python -m pip install -r requirements.txt
 ```
-
-Run scripts from the repository root unless a script-specific README says otherwise. Most copied scripts were preserved as workflow entry points and may still expect the same command-line arguments used in the original local experiments.
-
-## Development Notes
-
-- Do not commit large artifacts.
-- Add new method code under `src/` once it is stable enough to be imported and tested.
-- Add runnable workflow entry points under `scripts/`.
-- Add lightweight experiment summaries under `experiments/`.
-- Add final small tables and figures under `results/`.
-- Record local data dependencies in manifests instead of committing the data.
