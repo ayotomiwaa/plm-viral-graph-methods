@@ -1,0 +1,49 @@
+# Template for reproducible method-validation runs.
+run:
+  name: example_method_validation_run
+  seed: 42
+  output_root: /path/to/local/untracked/output
+
+inputs:
+  accession_manifest: /path/to/local/accessions.csv
+  metadata: /path/to/local/metadata.csv
+  aligned_fasta: /path/to/local/aligned_spike_sequences.fasta
+  embedding_matrix: /path/to/local/embeddings.npy
+  embedding_ids: /path/to/local/ids.txt
+
+representations:
+  hamming:
+    enabled: true
+    distance: hamming
+  embedding:
+    enabled: true
+    model: ESM-2
+    distance: manhattan
+    normalization: none
+
+graphs:
+  families:
+    - mst
+    - rng
+    - knn
+  knn_k:
+    - 5
+    - 50
+  rng:
+    witness: exact
+  geodesic:
+    weighted: true
+
+validation:
+  lineage_assortativity: true
+  tree_distance_correlation: true
+  root_to_tip_regression: true
+  temporal_rng_dag: true
+  gromov_hyperbolicity: true
+
+reporting:
+  write_small_summaries: true
+  write_large_artifacts: false
+  notes: >
+    Keep large graph outputs, distance matrices, and Dijkstra outputs outside
+    Git. Promote only small summary tables and figures into results/.

@@ -1,0 +1,14 @@
+# Core analysis dependencies
+numpy
+pandas
+scipy
+scikit-learn
+numba
+biopython
+
+# Embedding scripts
+torch
+transformers
+
+# Optional preferred NJ tree builder; scripts fall back to Biopython when possible.
+scikit-bio

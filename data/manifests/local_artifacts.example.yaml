@@ -1,0 +1,36 @@
+# Copy to local_artifacts.yaml and edit for your machine.
+artifacts:
+  - name: aligned_spike_fasta
+    kind: fasta
+    local_path: /path/to/local/aligned_spike_sequences.fasta
+    tracked_in_git: false
+    checksum: null
+    notes: Aligned spike sequences used for Hamming distances.
+
+  - name: metadata
+    kind: metadata
+    local_path: /path/to/local/metadata.csv
+    tracked_in_git: false
+    checksum: null
+    notes: Metadata with accession, lineage, and collection_date columns.
+
+  - name: esm2_embeddings
+    kind: embedding_matrix
+    local_path: /path/to/local/embeddings.npy
+    tracked_in_git: false
+    checksum: null
+    notes: ESM-2 embedding matrix matched to embedding_ids.
+
+  - name: esm2_embedding_ids
+    kind: accession_ids
+    local_path: /path/to/local/ids.txt
+    tracked_in_git: false
+    checksum: null
+    notes: ID file for rows in esm2_embeddings.
+
+  - name: graph_output_root
+    kind: graph_outputs
+    local_path: /path/to/local/graph_runs
+    tracked_in_git: false
+    checksum: null
+    notes: Contains untracked nodes, edges, adjacency, and geodesic outputs.
