@@ -213,7 +213,7 @@ has four-point hyperbolicity `0`; larger values indicate less tree-like metric
 geometry. In plots, the normalized value `delta_norm` is usually easier to
 compare across distance scales.
 
-## Code Provenance
+## Code
 
 | Metric | Source file | Function(s) | Confirmed implementation detail |
 |---|---|---|---|
