@@ -6,6 +6,15 @@ __pycache__/
 .mypy_cache/
 .ruff_cache/
 .ipynb_checkpoints/
+
+# Local generated reports, exports, and private presentation drafts
+output/
+outputs/
+presentation/
+presentations/
+*.pptx
+*.odp
+*.key
 .venv/
 venv/
 env/
@@ -35,9 +44,19 @@ core
 *.cache
 logs/
 tmp/
+.tmp/
 temp/
 cache/
 checkpoints/
+
+# Local generated reports, exports, and private presentation drafts
+output/
+outputs/
+presentation/
+presentations/
+*.pptx
+*.odp
+*.key
 
 # Large data, embeddings, models, and serialized arrays
 *.npy
