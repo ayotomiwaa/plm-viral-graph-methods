@@ -134,6 +134,57 @@ def shuffled_date_arrays(
     return shuffled, valid_dates.copy()
 
 
+def locally_shuffled_date_arrays(
+    date_days: np.ndarray,
+    valid_dates: np.ndarray,
+    shuffle_seed: int,
+    max_window_days: int,
+    attempts_per_node: int,
+) -> tuple[np.ndarray, np.ndarray, dict[str, int]]:
+    shuffled = date_days.copy()
+    valid_node_ids = np.flatnonzero(valid_dates)
+    stats = {
+        "date_shuffle_window_days": int(max_window_days),
+        "date_shuffle_attempts_per_node": int(attempts_per_node),
+        "date_shuffle_proposed_swaps": 0,
+        "date_shuffle_accepted_swaps": 0,
+        "date_shuffle_rejected_swaps": 0,
+        "date_shuffle_moved_nodes": 0,
+        "date_shuffle_max_displacement_days": 0,
+    }
+    if valid_node_ids.size <= 1:
+        return shuffled, valid_dates.copy(), stats
+
+    rng = np.random.default_rng(shuffle_seed)
+    original_days = date_days
+    n_valid = int(valid_node_ids.size)
+    n_attempts = int(n_valid * attempts_per_node)
+    for _ in range(n_attempts):
+        ia = int(rng.integers(0, n_valid))
+        ib = int(rng.integers(0, n_valid))
+        stats["date_shuffle_proposed_swaps"] += 1
+        if ia == ib:
+            stats["date_shuffle_rejected_swaps"] += 1
+            continue
+        a = int(valid_node_ids[ia])
+        b = int(valid_node_ids[ib])
+        a_new = int(shuffled[b])
+        b_new = int(shuffled[a])
+        if (
+            abs(a_new - int(original_days[a])) <= max_window_days
+            and abs(b_new - int(original_days[b])) <= max_window_days
+        ):
+            shuffled[a], shuffled[b] = a_new, b_new
+            stats["date_shuffle_accepted_swaps"] += 1
+        else:
+            stats["date_shuffle_rejected_swaps"] += 1
+
+    displacement = np.abs(shuffled[valid_node_ids] - date_days[valid_node_ids])
+    stats["date_shuffle_moved_nodes"] = int(np.count_nonzero(displacement))
+    stats["date_shuffle_max_displacement_days"] = int(displacement.max(initial=0))
+    return shuffled, valid_dates.copy(), stats
+
+
 def mean_pairwise_abs_delta_days(sorted_days: np.ndarray) -> float:
     n = int(sorted_days.size)
     if n <= 1:
@@ -528,7 +579,8 @@ def summarize_graph_balls(
     log(
         "Summarizing RNG balls: "
         f"{panel}/seed_{seed} {spec['graph_name']} centers={len(centers):,} radii={len(radii):,} "
-        f"date_shuffles={args.date_shuffle_count:,}"
+        f"date_shuffles={args.date_shuffle_count:,} "
+        f"date_shuffle_window_days={args.date_shuffle_max_window_days}"
     )
     date_sets: list[dict[str, Any]] = [
         {
@@ -537,6 +589,15 @@ def summarize_graph_balls(
             "date_days": date_days,
             "valid_dates": valid_dates,
             "labels": collection_time_labels_from_date_arrays(date_days, valid_dates),
+            "shuffle_stats": {
+                "date_shuffle_window_days": math.nan,
+                "date_shuffle_attempts_per_node": 0,
+                "date_shuffle_proposed_swaps": 0,
+                "date_shuffle_accepted_swaps": 0,
+                "date_shuffle_rejected_swaps": 0,
+                "date_shuffle_moved_nodes": 0,
+                "date_shuffle_max_displacement_days": 0,
+            },
         }
     ]
     for shuffle_index in range(1, args.date_shuffle_count + 1):
@@ -547,7 +608,25 @@ def summarize_graph_balls(
             graph_name=str(spec["graph_name"]),
             shuffle_index=shuffle_index,
         )
-        shuffled_days, shuffled_valid = shuffled_date_arrays(date_days, valid_dates, shuffle_seed=shuffle_seed)
+        if args.date_shuffle_max_window_days >= 0:
+            shuffled_days, shuffled_valid, shuffle_stats = locally_shuffled_date_arrays(
+                date_days,
+                valid_dates,
+                shuffle_seed=shuffle_seed,
+                max_window_days=args.date_shuffle_max_window_days,
+                attempts_per_node=args.date_shuffle_attempts_per_node,
+            )
+        else:
+            shuffled_days, shuffled_valid = shuffled_date_arrays(date_days, valid_dates, shuffle_seed=shuffle_seed)
+            shuffle_stats = {
+                "date_shuffle_window_days": -1,
+                "date_shuffle_attempts_per_node": 0,
+                "date_shuffle_proposed_swaps": 0,
+                "date_shuffle_accepted_swaps": int(np.count_nonzero(shuffled_days != date_days)),
+                "date_shuffle_rejected_swaps": 0,
+                "date_shuffle_moved_nodes": int(np.count_nonzero(shuffled_days != date_days)),
+                "date_shuffle_max_displacement_days": int(np.abs(shuffled_days[valid_dates] - date_days[valid_dates]).max(initial=0)),
+            }
         date_sets.append(
             {
                 "date_assignment": f"date_shuffle_{shuffle_index:03d}",
@@ -555,6 +634,7 @@ def summarize_graph_balls(
                 "date_days": shuffled_days,
                 "valid_dates": shuffled_valid,
                 "labels": collection_time_labels_from_date_arrays(shuffled_days, shuffled_valid),
+                "shuffle_stats": shuffle_stats,
             }
         )
 
@@ -589,6 +669,7 @@ def summarize_graph_balls(
                         "radius_selection": radius_selection,
                         "date_assignment": date_set["date_assignment"],
                         "date_shuffle_index": int(date_set["date_shuffle_index"]),
+                        **date_set["shuffle_stats"],
                         "center_collection_date": center_dates[int(center)],
                         "center_collection_month": center_months[int(center)],
                         "center_collection_quarter": center_quarters[int(center)],
@@ -653,13 +734,30 @@ def main() -> None:
         "--date-shuffle-count",
         type=int,
         default=1,
-        help="Number of shuffled-date controls to write. Valid dates are permuted across valid-dated nodes.",
+        help=(
+            "Number of shuffled-date controls to write. By default, dates are randomized by bounded pair swaps "
+            "within --date-shuffle-max-window-days; set that value negative for the old unrestricted permutation."
+        ),
     )
     ap.add_argument("--date-shuffle-seed", type=int, default=42)
+    ap.add_argument(
+        "--date-shuffle-max-window-days",
+        type=int,
+        default=62,
+        help="Maximum allowed date displacement in a shuffled assignment. Default 62 approximates two months; negative restores unrestricted permutation.",
+    )
+    ap.add_argument(
+        "--date-shuffle-attempts-per-node",
+        type=int,
+        default=20,
+        help="Number of random bounded swap proposals per valid-dated node for each shuffled-date control.",
+    )
     ap.add_argument("--progress-every", type=int, default=250)
     args = ap.parse_args()
     if args.date_shuffle_count < 0:
         raise ValueError("--date-shuffle-count must be non-negative")
+    if args.date_shuffle_attempts_per_node < 0:
+        raise ValueError("--date-shuffle-attempts-per-node must be non-negative")
 
     panels = [item.strip() for item in args.panels.split(",") if item.strip()]
     seeds = parse_seed_list(args.seeds)
