@@ -160,3 +160,5 @@ test.py
 !docs/**
 !tests/**
 !metric_formulations.md
+
+src/
