@@ -172,93 +172,58 @@ def normalize_curves(
     return pd.DataFrame(curve_rows), pd.DataFrame(saturation_rows)
 
 
-def assign_normalized_bins(curves: pd.DataFrame, bins: int) -> pd.DataFrame:
-    if bins <= 0:
+def align_curves_on_normalized_grid(curves: pd.DataFrame, intervals: int) -> pd.DataFrame:
+    if intervals <= 0:
         raise ValueError("--bins must be positive")
-    frame = curves.copy()
-    if "in_saturation_interval" in frame.columns:
-        frame = frame[frame["in_saturation_interval"].astype(bool)].copy()
-    bin_index = np.floor(frame["x_norm"].to_numpy(dtype=float) * bins).astype(int)
-    bin_index = np.clip(bin_index, 0, bins - 1)
-    frame["x_bin"] = bin_index
-    frame["x_bin_left"] = frame["x_bin"] / bins
-    frame["x_bin_right"] = (frame["x_bin"] + 1) / bins
-    frame["x_bin_mid"] = (frame["x_bin_left"] + frame["x_bin_right"]) / 2
-    grouped = (
-        frame.groupby(
-            [
-                "graph_key",
-                "graph_label",
-                "spread_family",
-                "statistic",
-                "value_col",
-                "sampled_max_radius",
-                "x_saturation_radius",
-                "max_radius",
-                "saturation_value",
-                "x_bin",
-                "x_bin_left",
-                "x_bin_right",
-                "x_bin_mid",
-            ],
-            dropna=False,
-            as_index=False,
-        )
-        .agg(
-            y_norm_mean=("y_norm", "mean"),
-            y_norm_min=("y_norm", "min"),
-            y_norm_max=("y_norm", "max"),
-            raw_value_mean=("value", "mean"),
-            radius_min=("radius", "min"),
-            radius_max=("radius", "max"),
-            n_radius_points=("radius", "size"),
-        )
-        .sort_values(["spread_family", "statistic", "graph_key", "x_bin"])
-        .reset_index(drop=True)
-    )
-    return grouped
 
-
-def correlation_row(x: pd.Series, y: pd.Series) -> dict[str, float | int]:
-    valid = x.notna() & y.notna()
-    x = x[valid]
-    y = y[valid]
-    out: dict[str, float | int] = {
-        "n_bins": int(valid.sum()),
-        "n_unique_x": int(x.nunique()),
-        "n_unique_y": int(y.nunique()),
-    }
-    if out["n_bins"] >= 2 and out["n_unique_x"] >= 2 and out["n_unique_y"] >= 2:
-        out["pearson_r"] = float(x.corr(y, method="pearson"))
-        out["spearman_r"] = float(x.corr(y, method="spearman"))
-    else:
-        out["pearson_r"] = math.nan
-        out["spearman_r"] = math.nan
-    return out
-
-
-def compute_correlations(binned: pd.DataFrame) -> pd.DataFrame:
+    grid = np.linspace(0.0, 1.0, intervals + 1)
     rows: list[dict[str, Any]] = []
-    for keys, group in binned.groupby(["graph_key", "graph_label", "spread_family", "statistic"], sort=False):
-        graph_key, graph_label, spread_family, statistic = keys
-        corr = correlation_row(group["x_bin_mid"], group["y_norm_mean"])
-        rows.append(
-            {
-                "graph_key": graph_key,
-                "graph_label": graph_label,
-                "spread_family": spread_family,
-                "statistic": statistic,
-                **corr,
-            }
+    group_cols = ["graph_key", "graph_label", "spread_family", "statistic", "value_col"]
+    for keys, group in curves.groupby(group_cols, sort=False):
+        graph_key, graph_label, spread_family, statistic, value_col = keys
+        group = group[group["in_saturation_interval"].astype(bool)].copy()
+        observed = (
+            group.groupby("x_norm", as_index=False, sort=True)
+            .agg(y_norm=("y_norm", "mean"), radius=("radius", "mean"))
+            .sort_values("x_norm")
         )
-    return pd.DataFrame(rows).sort_values(["spread_family", "statistic", "graph_key"]).reset_index(drop=True)
+        if observed.shape[0] < 2:
+            raise ValueError(
+                f"{graph_key} {spread_family} {statistic} has fewer than two normalized-radius points"
+            )
+
+        x_observed = observed["x_norm"].to_numpy(dtype=float)
+        y_observed = observed["y_norm"].to_numpy(dtype=float)
+        y_grid = np.interp(grid, x_observed, y_observed)
+        metadata = group.iloc[0]
+        for grid_index, (x_norm, y_norm) in enumerate(zip(grid, y_grid)):
+            rows.append(
+                {
+                    "graph_key": graph_key,
+                    "graph_label": graph_label,
+                    "spread_family": spread_family,
+                    "statistic": statistic,
+                    "value_col": value_col,
+                    "grid_index": grid_index,
+                    "n_grid_intervals": intervals,
+                    "x_norm": float(x_norm),
+                    "y_norm": float(y_norm),
+                    "x_saturation_radius": float(metadata["x_saturation_radius"]),
+                    "saturation_value": float(metadata["saturation_value"]),
+                    "n_observed_radius_points": int(observed.shape[0]),
+                    "alignment_method": "linear_interpolation_within_x_saturation_radius",
+                }
+            )
+    return pd.DataFrame(rows).sort_values(
+        ["spread_family", "statistic", "graph_key", "grid_index"]
+    ).reset_index(drop=True)
 
 
-def compute_graph_pair_correlations(binned: pd.DataFrame) -> pd.DataFrame:
+def compute_graph_pair_correlations(aligned: pd.DataFrame) -> pd.DataFrame:
     rows: list[dict[str, Any]] = []
-    for keys, group in binned.groupby(["spread_family", "statistic"], sort=False):
+    for keys, group in aligned.groupby(["spread_family", "statistic"], sort=False):
         spread_family, statistic = keys
-        wide = group.pivot_table(index="x_bin", columns="graph_key", values="y_norm_mean", aggfunc="first")
+        wide = group.pivot_table(index="grid_index", columns="graph_key", values="y_norm", aggfunc="first")
         for graph_key in ["rng_hamming", "rng_embedding"]:
             if graph_key not in wide.columns:
                 wide[graph_key] = np.nan
@@ -268,12 +233,14 @@ def compute_graph_pair_correlations(binned: pd.DataFrame) -> pd.DataFrame:
             "spread_family": spread_family,
             "statistic": statistic,
             "comparison": "rng_hamming_vs_rng_embedding",
-            "n_matched_bins": int(paired.shape[0]),
+            "n_matched_grid_points": int(paired.shape[0]),
+            "n_grid_intervals": int(group["n_grid_intervals"].iloc[0]),
+            "alignment_method": "linear_interpolation_within_x_saturation_radius",
             "n_unique_hamming_y": int(paired["rng_hamming"].nunique()),
             "n_unique_embedding_y": int(paired["rng_embedding"].nunique()),
         }
         if (
-            row["n_matched_bins"] >= 2
+            row["n_matched_grid_points"] >= 2
             and row["n_unique_hamming_y"] >= 2
             and row["n_unique_embedding_y"] >= 2
         ):
@@ -284,23 +251,6 @@ def compute_graph_pair_correlations(binned: pd.DataFrame) -> pd.DataFrame:
             row["spearman_r"] = math.nan
         rows.append(row)
     return pd.DataFrame(rows).sort_values(["spread_family", "statistic"]).reset_index(drop=True)
-
-
-def write_wide_tables(correlations: pd.DataFrame, out_dir: Path, stats: list[str]) -> list[Path]:
-    written: list[Path] = []
-    for spread_family, family in correlations.groupby("spread_family", sort=False):
-        for method in ["pearson_r", "spearman_r"]:
-            table = family.pivot(index="statistic", columns="graph_key", values=method)
-            table = table.reindex(stats)
-            table = table.rename_axis(index="correlation_statistic", columns=None).reset_index()
-            for graph_key in ["rng_hamming", "rng_embedding"]:
-                if graph_key not in table.columns:
-                    table[graph_key] = np.nan
-            table = table[["correlation_statistic", "rng_hamming", "rng_embedding"]]
-            out_path = out_dir / f"{spread_family}_normalized_radius_spread_{method}_table.csv"
-            table.to_csv(out_path, index=False)
-            written.append(out_path)
-    return written
 
 
 def write_graph_pair_wide_tables(pair_correlations: pd.DataFrame, out_dir: Path, stats: list[str]) -> list[Path]:
@@ -413,9 +363,9 @@ def write_graph_pair_correlation_plot(pair_correlations: pd.DataFrame, out_path:
     plt.close(fig)
 
 
-def write_normalized_curve_plot(curves: pd.DataFrame, spread_family: str, out_path: Path) -> None:
+def write_normalized_curve_plot(aligned: pd.DataFrame, spread_family: str, out_path: Path) -> None:
     plt = load_pyplot(out_path)
-    frame = curves[curves["spread_family"] == spread_family].copy()
+    frame = aligned[aligned["spread_family"] == spread_family].copy()
     if frame.empty:
         log(f"Skipping {out_path}: no rows for {spread_family}")
         return
@@ -437,7 +387,7 @@ def write_normalized_curve_plot(curves: pd.DataFrame, spread_family: str, out_pa
     for ax, stat in zip(axes_flat, stats):
         stat_frame = frame[frame["statistic"] == stat]
         for graph_key in ["rng_hamming", "rng_embedding"]:
-            graph_frame = stat_frame[stat_frame["graph_key"] == graph_key].sort_values("x_norm")
+            graph_frame = stat_frame[stat_frame["graph_key"] == graph_key].sort_values("grid_index")
             if graph_frame.empty:
                 continue
             ax.plot(
@@ -496,9 +446,9 @@ def write_combined_correlation_plot(correlations: pd.DataFrame, out_path: Path, 
 def main() -> None:
     ap = argparse.ArgumentParser(
         description=(
-            "Normalize RNG ball radius-summary curves by each graph's own terminal radius and "
-            "terminal temporal-spread value, then correlate the normalized Hamming and embedding "
-            "curves on shared normalized-radius bins."
+            "Normalize each RNG ball radius-summary curve by its terminal temporal-spread value "
+            "and positive r95 radius, align Hamming and embedding on a shared normalized-radius "
+            "grid, then correlate the two normalized curves."
         )
     )
     ap.add_argument("--embedding-summary-csv", type=Path, default=DEFAULT_CITYBLOCK_SUMMARY)
@@ -513,7 +463,12 @@ def main() -> None:
     )
     ap.add_argument("--spread-families", default="max_delta_days,mean_delta_days")
     ap.add_argument("--stats", default="min,q1,median,q3,max")
-    ap.add_argument("--bins", type=int, default=10)
+    ap.add_argument(
+        "--bins",
+        type=int,
+        default=20,
+        help="Number of equal intervals on the shared normalized-radius grid; 20 intervals give 21 points.",
+    )
     ap.add_argument("--threshold", type=float, default=0.95)
     ap.add_argument("--plot-correlation", choices=["pearson_r", "spearman_r"], default="pearson_r")
     args = ap.parse_args()
@@ -547,25 +502,25 @@ def main() -> None:
 
     curves = pd.concat(curve_frames, ignore_index=True)
     saturation = pd.concat(saturation_frames, ignore_index=True)
-    binned = assign_normalized_bins(curves, bins=args.bins)
-    pair_correlations = compute_graph_pair_correlations(binned)
+    aligned = align_curves_on_normalized_grid(curves, intervals=args.bins)
+    pair_correlations = compute_graph_pair_correlations(aligned)
 
     args.out_dir.mkdir(parents=True, exist_ok=True)
     curve_path = args.out_dir / "normalized_radius_spread_curve_points.csv"
     saturation_path = args.out_dir / "normalized_radius_spread_saturation_points.csv"
-    binned_path = args.out_dir / "normalized_radius_spread_binned_points.csv"
+    aligned_path = args.out_dir / "normalized_radius_spread_aligned_grid_points.csv"
     pair_corr_path = args.out_dir / "normalized_hamming_embedding_curve_correlations_long.csv"
 
     curves.to_csv(curve_path, index=False)
     saturation.to_csv(saturation_path, index=False)
-    binned.to_csv(binned_path, index=False)
+    aligned.to_csv(aligned_path, index=False)
     pair_correlations.to_csv(pair_corr_path, index=False)
     pair_wide_paths = write_graph_pair_wide_tables(pair_correlations, args.out_dir, stats=stats)
 
     plot_paths: list[Path] = []
     for spread_family in spread_families:
         curve_plot_path = args.out_dir / f"{spread_family}_normalized_hamming_embedding_curves.png"
-        write_normalized_curve_plot(curves, spread_family=spread_family, out_path=curve_plot_path)
+        write_normalized_curve_plot(aligned, spread_family=spread_family, out_path=curve_plot_path)
         plot_paths.append(curve_plot_path)
     pair_plot_path = args.out_dir / f"normalized_hamming_embedding_curve_{args.plot_correlation}_plot.png"
     write_graph_pair_correlation_plot(pair_correlations, out_path=pair_plot_path, method=args.plot_correlation)
@@ -574,7 +529,7 @@ def main() -> None:
     for path in [
         curve_path,
         saturation_path,
-        binned_path,
+        aligned_path,
         pair_corr_path,
         *pair_wide_paths,
         *plot_paths,
