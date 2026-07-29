@@ -1,0 +1,85 @@
+{
+  "graphs": {
+    "embedding_rng": {
+      "adj_nnz": 5748016,
+      "adj_shape": [
+        20000,
+        20000
+      ],
+      "adjacency_symmetric": true,
+      "edge_weights_finite_nonnegative": true,
+      "explicit_zero_weight_entries": 4338424,
+      "graph_dir": "/alina-data1/Ezekiel/Protein_embeddings/analysis/cohort_validation/07_sampling_design_20k/random_full_dataset_seed42/seed_42/graphs/esm2_650M/cityblock/pool_n20000/embedding_rng_exact",
+      "observed_giant_component_size": 20000,
+      "observed_n_components": 1,
+      "stats_giant_component_size": 20000,
+      "stats_n_components": 1
+    },
+    "hamming_rng": {
+      "adj_nnz": 10401148,
+      "adj_shape": [
+        20000,
+        20000
+      ],
+      "adjacency_symmetric": true,
+      "edge_weights_finite_nonnegative": true,
+      "explicit_zero_weight_entries": 4668172,
+      "graph_dir": "/alina-data1/Ezekiel/Protein_embeddings/analysis/cohort_validation/07_sampling_design_20k/random_full_dataset_seed42/seed_42/graphs/hamming/pool_n20000/hamming_rng_exact",
+      "observed_giant_component_size": 20000,
+      "observed_n_components": 1,
+      "stats_giant_component_size": 20000,
+      "stats_n_components": 1
+    }
+  },
+  "label_col": "cohort_id",
+  "labels": {
+    "A": 2223,
+    "B_clean": 2223,
+    "C": 2222,
+    "D": 2222,
+    "E1": 2222,
+    "E2": 2222,
+    "E3": 2222,
+    "F": 2222,
+    "G": 2222
+  },
+  "matrices": {
+    "embedding": {
+      "diagonal_finite_count": 0,
+      "diagonal_finite_max": null,
+      "diagonal_finite_min": null,
+      "diagonal_nonfinite_count": 20000,
+      "dtype": "float32",
+      "path": "/alina-data1/Ezekiel/Protein_embeddings/analysis/cohort_validation/07_sampling_design_20k/random_full_dataset_seed42/seed_42/graphs/esm2_650M/cityblock/pool_n20000/distance_matrices/embedding_cityblock_float32.npy",
+      "sampled_off_diagonal_finite_nonnegative_symmetric": true,
+      "sampled_off_diagonal_pairs": 20000,
+      "shape": [
+        20000,
+        20000
+      ]
+    },
+    "hamming": {
+      "diagonal_finite_count": 20000,
+      "diagonal_finite_max": 65535.0,
+      "diagonal_finite_min": 65535.0,
+      "diagonal_nonfinite_count": 0,
+      "dtype": "uint16",
+      "path": "/alina-data1/Ezekiel/Protein_embeddings/analysis/cohort_validation/07_sampling_design_20k/random_full_dataset_seed42/seed_42/graphs/hamming/pool_n20000/distance_matrices/hamming_count-gap-state_all_states_uint16.npy",
+      "sampled_off_diagonal_finite_nonnegative_symmetric": true,
+      "sampled_off_diagonal_pairs": 20000,
+      "shape": [
+        20000,
+        20000
+      ]
+    }
+  },
+  "metadata": {
+    "accession_order_matches_nodes": true,
+    "cohort_id_order_matches_nodes": true,
+    "n_rows": 20000,
+    "path": "/alina-data1/Ezekiel/Protein_embeddings/analysis/cohort_validation/07_sampling_design_20k/random_full_dataset_seed42/seed_42/inputs/pool_n20000/metadata.csv"
+  },
+  "n_nodes": 20000,
+  "out_root": "/alina-data1/Ezekiel/Protein_embeddings/analysis/cohort_validation/16_seed42_20k_kmedoids/random_full_dataset_seed42/seed_42",
+  "panel_root": "/alina-data1/Ezekiel/Protein_embeddings/analysis/cohort_validation/07_sampling_design_20k/random_full_dataset_seed42/seed_42"
+}

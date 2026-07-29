@@ -28,6 +28,7 @@ These copies are intended as reusable workflow entry points, not as a fully refa
 
 | New path | Source path |
 |---|---|
+| `scripts/validation/paired_kmedoids_comparison.py` | `analysis/cohort_validation/16_seed42_20k_kmedoids/paired_kmedoids_comparison.py` |
 | `scripts/validation/make_assortativity_summary_table.py` | `analysis/cohort_validation/scripts/make_assortativity_summary_table.py` |
 | `scripts/validation/nextstrain_spike_tree_validation.py` | `analysis/cohort_validation/scripts/nextstrain_spike_tree_validation.py` |
 | `scripts/validation/time_dated_tree_validation.py` | `analysis/cohort_validation/scripts/time_dated_tree_validation.py` |

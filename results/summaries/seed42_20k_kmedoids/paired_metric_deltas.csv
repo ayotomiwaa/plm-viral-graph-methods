@@ -1,0 +1,7 @@
+metric_left,metric_right,n_paired_repeats,ari_mean_delta_left_minus_right,mislabeled_mean_delta_left_minus_right
+embedding,embedding_rng,200,0.008381292356825085,23.375
+embedding,hamming,200,-0.12883854639831274,1928.575
+embedding,hamming_rng,200,-0.08423103297635706,1442.575
+embedding_rng,hamming,200,-0.13721983875513782,1905.2
+embedding_rng,hamming_rng,200,-0.09261232533318214,1419.2
+hamming,hamming_rng,200,0.04460751342195569,-486.0
