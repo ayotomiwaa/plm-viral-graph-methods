@@ -352,7 +352,13 @@ def safe_radius_label(radius: float) -> str:
     return label.replace("-", "m").replace(".", "p")
 
 
-def write_boxplot(ball_frame: pd.DataFrame, value_col: str, ylabel: str, out_path: Path) -> None:
+def write_boxplot(
+    ball_frame: pd.DataFrame,
+    value_col: str,
+    ylabel: str,
+    out_path: Path,
+    xlabel: str = "RNG graph-distance radius",
+) -> None:
     plt = load_pyplot(out_path)
     if plt is None:
         return
@@ -365,7 +371,7 @@ def write_boxplot(ball_frame: pd.DataFrame, value_col: str, ylabel: str, out_pat
     fig_width = max(8.0, min(18.0, 0.55 * len(radii) + 4.0))
     fig, ax = plt.subplots(figsize=(fig_width, 5.5), constrained_layout=True)
     ax.boxplot(data, tick_labels=[f"{radius:.4g}" for radius in radii], showfliers=False)
-    ax.set_xlabel("RNG graph-distance radius")
+    ax.set_xlabel(xlabel)
     ax.set_ylabel(ylabel)
     ax.tick_params(axis="x", labelrotation=45)
     ax.grid(axis="y", alpha=0.25)
@@ -479,7 +485,13 @@ def summarize_center_time_correlation_by_radius(
     return result
 
 
-def write_time_correlation_by_radius_plot(corr_frame: pd.DataFrame, corr_col: str, ylabel: str, out_path: Path) -> None:
+def write_time_correlation_by_radius_plot(
+    corr_frame: pd.DataFrame,
+    corr_col: str,
+    ylabel: str,
+    out_path: Path,
+    xlabel: str = "RNG graph-distance radius",
+) -> None:
     plt = load_pyplot(out_path)
     if plt is None:
         return
@@ -524,7 +536,7 @@ def write_time_correlation_by_radius_plot(corr_frame: pd.DataFrame, corr_col: st
     ax.set_ylim(-1.05, 1.05)
     ax.set_xticks(range(len(radii)))
     ax.set_xticklabels([f"{radius:.4g}" for radius in radii], rotation=45, ha="right")
-    ax.set_xlabel("RNG graph-distance radius")
+    ax.set_xlabel(xlabel)
     ax.set_ylabel(ylabel)
     ax.grid(axis="y", alpha=0.25)
     fig.savefig(out_path, dpi=220)

@@ -28,6 +28,8 @@ DEFAULT_OUT_DIR = Path(
 GRAPH_LABELS = {
     "rng_embedding": "RNG embedding",
     "rng_hamming": "RNG Hamming",
+    "raw_embedding": "Raw embedding cityblock",
+    "raw_hamming": "Raw Hamming",
 }
 
 
@@ -219,33 +221,38 @@ def align_curves_on_normalized_grid(curves: pd.DataFrame, intervals: int) -> pd.
     ).reset_index(drop=True)
 
 
-def compute_graph_pair_correlations(aligned: pd.DataFrame) -> pd.DataFrame:
+def compute_graph_pair_correlations(
+    aligned: pd.DataFrame,
+    hamming_key: str,
+    embedding_key: str,
+    comparison_key: str,
+) -> pd.DataFrame:
     rows: list[dict[str, Any]] = []
     for keys, group in aligned.groupby(["spread_family", "statistic"], sort=False):
         spread_family, statistic = keys
         wide = group.pivot_table(index="grid_index", columns="graph_key", values="y_norm", aggfunc="first")
-        for graph_key in ["rng_hamming", "rng_embedding"]:
+        for graph_key in [hamming_key, embedding_key]:
             if graph_key not in wide.columns:
                 wide[graph_key] = np.nan
-        valid = wide["rng_hamming"].notna() & wide["rng_embedding"].notna()
-        paired = wide.loc[valid, ["rng_hamming", "rng_embedding"]]
+        valid = wide[hamming_key].notna() & wide[embedding_key].notna()
+        paired = wide.loc[valid, [hamming_key, embedding_key]]
         row: dict[str, Any] = {
             "spread_family": spread_family,
             "statistic": statistic,
-            "comparison": "rng_hamming_vs_rng_embedding",
+            "comparison": comparison_key,
             "n_matched_grid_points": int(paired.shape[0]),
             "n_grid_intervals": int(group["n_grid_intervals"].iloc[0]),
             "alignment_method": "linear_interpolation_within_x_saturation_radius",
-            "n_unique_hamming_y": int(paired["rng_hamming"].nunique()),
-            "n_unique_embedding_y": int(paired["rng_embedding"].nunique()),
+            "n_unique_hamming_y": int(paired[hamming_key].nunique()),
+            "n_unique_embedding_y": int(paired[embedding_key].nunique()),
         }
         if (
             row["n_matched_grid_points"] >= 2
             and row["n_unique_hamming_y"] >= 2
             and row["n_unique_embedding_y"] >= 2
         ):
-            row["pearson_r"] = float(paired["rng_hamming"].corr(paired["rng_embedding"], method="pearson"))
-            row["spearman_r"] = float(paired["rng_hamming"].corr(paired["rng_embedding"], method="spearman"))
+            row["pearson_r"] = float(paired[hamming_key].corr(paired[embedding_key], method="pearson"))
+            row["spearman_r"] = float(paired[hamming_key].corr(paired[embedding_key], method="spearman"))
         else:
             row["pearson_r"] = math.nan
             row["spearman_r"] = math.nan
@@ -253,17 +260,23 @@ def compute_graph_pair_correlations(aligned: pd.DataFrame) -> pd.DataFrame:
     return pd.DataFrame(rows).sort_values(["spread_family", "statistic"]).reset_index(drop=True)
 
 
-def write_graph_pair_wide_tables(pair_correlations: pd.DataFrame, out_dir: Path, stats: list[str]) -> list[Path]:
+def write_graph_pair_wide_tables(
+    pair_correlations: pd.DataFrame,
+    out_dir: Path,
+    stats: list[str],
+    comparison_key: str,
+    file_token: str,
+) -> list[Path]:
     written: list[Path] = []
     for spread_family, family in pair_correlations.groupby("spread_family", sort=False):
         for method in ["pearson_r", "spearman_r"]:
             table = family.pivot(index="statistic", columns="comparison", values=method)
             table = table.reindex(stats)
             table = table.rename_axis(index="correlation_statistic", columns=None).reset_index()
-            if "rng_hamming_vs_rng_embedding" not in table.columns:
-                table["rng_hamming_vs_rng_embedding"] = np.nan
-            table = table[["correlation_statistic", "rng_hamming_vs_rng_embedding"]]
-            out_path = out_dir / f"{spread_family}_normalized_hamming_embedding_curve_{method}_table.csv"
+            if comparison_key not in table.columns:
+                table[comparison_key] = np.nan
+            table = table[["correlation_statistic", comparison_key]]
+            out_path = out_dir / f"{spread_family}_normalized_{file_token}_curve_{method}_table.csv"
             table.to_csv(out_path, index=False)
             written.append(out_path)
     return written
@@ -340,7 +353,12 @@ def write_correlation_plot(correlations: pd.DataFrame, spread_family: str, out_p
     plt.close(fig)
 
 
-def write_graph_pair_correlation_plot(pair_correlations: pd.DataFrame, out_path: Path, method: str) -> None:
+def write_graph_pair_correlation_plot(
+    pair_correlations: pd.DataFrame,
+    out_path: Path,
+    method: str,
+    title: str,
+) -> None:
     plt = load_pyplot(out_path)
     frame = pair_correlations.copy()
     frame[method] = pd.to_numeric(frame[method], errors="coerce")
@@ -357,13 +375,20 @@ def write_graph_pair_correlation_plot(pair_correlations: pd.DataFrame, out_path:
         family = frame[frame["spread_family"] == spread_family]
         plot_pair_bars(ax, frame=family, method=method, spread_family=spread_family)
     axes[0].set_ylabel(f"{method.replace('_', ' ')} between normalized curves")
-    fig.suptitle("Correlation between normalized RNG ball-spread curves", fontsize=14, y=1.04)
+    fig.suptitle(title, fontsize=14, y=1.04)
     fig.tight_layout(rect=[0.03, 0.0, 1.0, 0.96])
     fig.savefig(out_path, dpi=220, bbox_inches="tight")
     plt.close(fig)
 
 
-def write_normalized_curve_plot(aligned: pd.DataFrame, spread_family: str, out_path: Path) -> None:
+def write_normalized_curve_plot(
+    aligned: pd.DataFrame,
+    spread_family: str,
+    out_path: Path,
+    pair_keys: tuple[str, str],
+    radius_xlabel: str,
+    title_prefix: str,
+) -> None:
     plt = load_pyplot(out_path)
     frame = aligned[aligned["spread_family"] == spread_family].copy()
     if frame.empty:
@@ -381,12 +406,12 @@ def write_normalized_curve_plot(aligned: pd.DataFrame, spread_family: str, out_p
 
     fig, axes = plt.subplots(n_rows, n_cols, figsize=(5.4 * n_cols, 3.8 * n_rows), sharex=True, sharey=True)
     axes_flat = np.array(axes, dtype=object).reshape(-1)
-    colors = {"rng_hamming": "#3366aa", "rng_embedding": "#cc7a29"}
-    markers = {"rng_hamming": "o", "rng_embedding": "s"}
+    colors = {pair_keys[0]: "#3366aa", pair_keys[1]: "#cc7a29"}
+    markers = {pair_keys[0]: "o", pair_keys[1]: "s"}
 
     for ax, stat in zip(axes_flat, stats):
         stat_frame = frame[frame["statistic"] == stat]
-        for graph_key in ["rng_hamming", "rng_embedding"]:
+        for graph_key in pair_keys:
             graph_frame = stat_frame[stat_frame["graph_key"] == graph_key].sort_values("grid_index")
             if graph_frame.empty:
                 continue
@@ -409,10 +434,14 @@ def write_normalized_curve_plot(aligned: pd.DataFrame, spread_family: str, out_p
     for ax in axes_flat[::n_cols]:
         ax.set_ylabel("Normalized temporal spread")
     for ax in axes_flat[-n_cols:]:
-        ax.set_xlabel("Normalized RNG graph-distance radius")
+        ax.set_xlabel(radius_xlabel)
     handles, labels = axes_flat[0].get_legend_handles_labels()
     fig.legend(handles, labels, frameon=False, ncol=2, loc="upper center", bbox_to_anchor=(0.5, 1.02))
-    fig.suptitle(f"{spread_family.replace('_', ' ')} normalized curves", fontsize=14, y=1.06)
+    fig.suptitle(
+        f"{title_prefix}: {spread_family.replace('_', ' ')} normalized curves",
+        fontsize=14,
+        y=1.06,
+    )
     fig.tight_layout()
     fig.savefig(out_path, dpi=220, bbox_inches="tight")
     plt.close(fig)
@@ -446,14 +475,20 @@ def write_combined_correlation_plot(correlations: pd.DataFrame, out_path: Path, 
 def main() -> None:
     ap = argparse.ArgumentParser(
         description=(
-            "Normalize each RNG ball radius-summary curve by its terminal temporal-spread value "
-            "and positive r95 radius, align Hamming and embedding on a shared normalized-radius "
-            "grid, then correlate the two normalized curves."
+            "Normalize each ball radius-summary curve by its terminal temporal-spread value and "
+            "positive r95 radius, align Hamming and embedding on a shared normalized-radius grid, "
+            "then correlate the two normalized curves."
         )
     )
     ap.add_argument("--embedding-summary-csv", type=Path, default=DEFAULT_CITYBLOCK_SUMMARY)
     ap.add_argument("--hamming-summary-csv", type=Path, default=DEFAULT_HAMMING_SUMMARY)
     ap.add_argument("--out-dir", type=Path, default=DEFAULT_OUT_DIR)
+    ap.add_argument(
+        "--comparison-kind",
+        choices=["rng", "raw"],
+        default="rng",
+        help="Select graph-distance RNG labels or direct raw-distance labels and output names.",
+    )
     ap.add_argument("--date-assignment", default="observed")
     ap.add_argument(
         "--date-shuffle-index",
@@ -480,10 +515,27 @@ def main() -> None:
     if not stats:
         raise ValueError("--stats must contain at least one value")
 
+    if args.comparison_kind == "raw":
+        hamming_key = "raw_hamming"
+        embedding_key = "raw_embedding"
+        comparison_key = "raw_hamming_vs_raw_embedding"
+        file_token = "raw_hamming_embedding"
+        radius_xlabel = "Normalized raw pairwise-distance radius"
+        title_prefix = "Raw Hamming vs embedding cityblock"
+        correlation_title = "Correlation between normalized raw-distance ball-spread curves"
+    else:
+        hamming_key = "rng_hamming"
+        embedding_key = "rng_embedding"
+        comparison_key = "rng_hamming_vs_rng_embedding"
+        file_token = "hamming_embedding"
+        radius_xlabel = "Normalized RNG graph-distance radius"
+        title_prefix = "RNG Hamming vs embedding cityblock"
+        correlation_title = "Correlation between normalized RNG ball-spread curves"
+
     summaries = pd.concat(
         [
-            read_summary(args.embedding_summary_csv, "rng_embedding", args.date_assignment, args.date_shuffle_index),
-            read_summary(args.hamming_summary_csv, "rng_hamming", args.date_assignment, args.date_shuffle_index),
+            read_summary(args.embedding_summary_csv, embedding_key, args.date_assignment, args.date_shuffle_index),
+            read_summary(args.hamming_summary_csv, hamming_key, args.date_assignment, args.date_shuffle_index),
         ],
         ignore_index=True,
     )
@@ -503,27 +555,50 @@ def main() -> None:
     curves = pd.concat(curve_frames, ignore_index=True)
     saturation = pd.concat(saturation_frames, ignore_index=True)
     aligned = align_curves_on_normalized_grid(curves, intervals=args.bins)
-    pair_correlations = compute_graph_pair_correlations(aligned)
+    pair_correlations = compute_graph_pair_correlations(
+        aligned,
+        hamming_key=hamming_key,
+        embedding_key=embedding_key,
+        comparison_key=comparison_key,
+    )
 
     args.out_dir.mkdir(parents=True, exist_ok=True)
     curve_path = args.out_dir / "normalized_radius_spread_curve_points.csv"
     saturation_path = args.out_dir / "normalized_radius_spread_saturation_points.csv"
     aligned_path = args.out_dir / "normalized_radius_spread_aligned_grid_points.csv"
-    pair_corr_path = args.out_dir / "normalized_hamming_embedding_curve_correlations_long.csv"
+    pair_corr_path = args.out_dir / f"normalized_{file_token}_curve_correlations_long.csv"
 
     curves.to_csv(curve_path, index=False)
     saturation.to_csv(saturation_path, index=False)
     aligned.to_csv(aligned_path, index=False)
     pair_correlations.to_csv(pair_corr_path, index=False)
-    pair_wide_paths = write_graph_pair_wide_tables(pair_correlations, args.out_dir, stats=stats)
+    pair_wide_paths = write_graph_pair_wide_tables(
+        pair_correlations,
+        args.out_dir,
+        stats=stats,
+        comparison_key=comparison_key,
+        file_token=file_token,
+    )
 
     plot_paths: list[Path] = []
     for spread_family in spread_families:
-        curve_plot_path = args.out_dir / f"{spread_family}_normalized_hamming_embedding_curves.png"
-        write_normalized_curve_plot(aligned, spread_family=spread_family, out_path=curve_plot_path)
+        curve_plot_path = args.out_dir / f"{spread_family}_normalized_{file_token}_curves.png"
+        write_normalized_curve_plot(
+            aligned,
+            spread_family=spread_family,
+            out_path=curve_plot_path,
+            pair_keys=(hamming_key, embedding_key),
+            radius_xlabel=radius_xlabel,
+            title_prefix=title_prefix,
+        )
         plot_paths.append(curve_plot_path)
-    pair_plot_path = args.out_dir / f"normalized_hamming_embedding_curve_{args.plot_correlation}_plot.png"
-    write_graph_pair_correlation_plot(pair_correlations, out_path=pair_plot_path, method=args.plot_correlation)
+    pair_plot_path = args.out_dir / f"normalized_{file_token}_curve_{args.plot_correlation}_plot.png"
+    write_graph_pair_correlation_plot(
+        pair_correlations,
+        out_path=pair_plot_path,
+        method=args.plot_correlation,
+        title=correlation_title,
+    )
     plot_paths.append(pair_plot_path)
 
     for path in [
