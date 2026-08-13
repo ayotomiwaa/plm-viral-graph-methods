@@ -53,6 +53,16 @@ def read_nodes(nodes_path: Path) -> pd.DataFrame:
     return nodes
 
 
+def graph_table_path(graph_dir: Path, stem: str) -> Path:
+    plain = graph_dir / f"{stem}.csv"
+    gzipped = graph_dir / f"{stem}.csv.gz"
+    if plain.exists():
+        return plain
+    if gzipped.exists():
+        return gzipped
+    raise FileNotFoundError(f"Missing {stem}.csv or {stem}.csv.gz in {graph_dir}")
+
+
 def read_kept_edges(edges_path: Path) -> pd.DataFrame:
     edges = pd.read_csv(edges_path, low_memory=False)
     required = {"source", "target", "weight"}
@@ -67,6 +77,45 @@ def read_kept_edges(edges_path: Path) -> pd.DataFrame:
     if (edges["weight"] < 0).any():
         raise ValueError(f"{edges_path} contains negative edge weights")
     return edges
+
+
+def parse_extra_graph_specs(value: str) -> list[dict[str, Any]]:
+    """Parse explicit graph specs not discoverable from the sampling tree.
+
+    Format per spec:
+
+        graph_name|graph_dir|metric_family|embedding_metric|graph_family
+
+    Multiple specs are separated by commas.
+    """
+    specs: list[dict[str, Any]] = []
+    for item in value.split(","):
+        item = item.strip()
+        if not item:
+            continue
+        parts = [part.strip() for part in item.split("|")]
+        if len(parts) != 5:
+            raise ValueError(
+                "--extra-graph-specs entries must be "
+                "graph_name|graph_dir|metric_family|embedding_metric|graph_family"
+            )
+        graph_name, graph_dir, metric_family, embedding_metric, graph_family = parts
+        specs.append(
+            {
+                "graph_name": graph_name,
+                "graph_dir": Path(graph_dir),
+                "metric_family": metric_family,
+                "embedding_metric": embedding_metric,
+                "graph_family": graph_family,
+            }
+        )
+    return specs
+
+
+def selected_graph_specs(panel_root: Path, sample_label: str, graph_names: str, extra_graph_specs: str) -> list[dict[str, Any]]:
+    specs = wanted_rng_graphs(panel_root, sample_label, graph_names)
+    specs.extend(parse_extra_graph_specs(extra_graph_specs))
+    return specs
 
 
 def build_graph(edges: pd.DataFrame, n_nodes: int, unweighted: bool):
@@ -554,10 +603,8 @@ def summarize_graph_balls(
     args: argparse.Namespace,
 ) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame]:
     graph_dir = Path(spec["graph_dir"])
-    nodes_path = graph_dir / "nodes.csv"
-    edges_path = graph_dir / "edges.csv"
-    if not nodes_path.exists() or not edges_path.exists():
-        raise FileNotFoundError(f"Missing RNG graph nodes/edges in {graph_dir}")
+    nodes_path = graph_table_path(graph_dir, "nodes")
+    edges_path = graph_table_path(graph_dir, "edges")
 
     nodes = read_nodes(nodes_path)
     edges = read_kept_edges(edges_path)
@@ -721,6 +768,15 @@ def main() -> None:
         default="embedding_cityblock_rng_exact",
         help="Comma-separated RNG graph names; defaults to the cityblock embedding RNG.",
     )
+    ap.add_argument(
+        "--extra-graph-specs",
+        default="",
+        help=(
+            "Comma-separated explicit graph specs, each "
+            "graph_name|graph_dir|metric_family|embedding_metric|graph_family. "
+            "Use this for refined graphs outside the original sampling tree."
+        ),
+    )
     ap.add_argument("--radii", default="", help="Comma-separated graph-distance radii. Overrides --radius-mode.")
     ap.add_argument(
         "--radius-mode",
@@ -789,7 +845,12 @@ def main() -> None:
                 continue
             seed_out = args.workspace / panel / f"seed_{seed}"
             seed_out.mkdir(parents=True, exist_ok=True)
-            for spec in wanted_rng_graphs(panel_root, args.sample_label, args.graph_names):
+            for spec in selected_graph_specs(
+                panel_root,
+                args.sample_label,
+                args.graph_names,
+                args.extra_graph_specs,
+            ):
                 graph_dir = Path(spec["graph_dir"])
                 if not graph_dir.exists():
                     log(f"Skipping missing RNG graph: {graph_dir}")

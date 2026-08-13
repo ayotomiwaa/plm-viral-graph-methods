@@ -28,6 +28,8 @@ DEFAULT_OUT_DIR = Path(
 GRAPH_LABELS = {
     "rng_embedding": "RNG embedding",
     "rng_hamming": "RNG Hamming",
+    "rng_embedding_baseline": "Baseline embedding RNG",
+    "rng_embedding_refined": "Refined embedding RNG",
     "raw_embedding": "Raw embedding cityblock",
     "raw_hamming": "Raw Hamming",
 }
@@ -485,7 +487,7 @@ def main() -> None:
     ap.add_argument("--out-dir", type=Path, default=DEFAULT_OUT_DIR)
     ap.add_argument(
         "--comparison-kind",
-        choices=["rng", "raw"],
+        choices=["rng", "raw", "baseline_refined_rng"],
         default="rng",
         help="Select graph-distance RNG labels or direct raw-distance labels and output names.",
     )
@@ -523,6 +525,14 @@ def main() -> None:
         radius_xlabel = "Normalized raw pairwise-distance radius"
         title_prefix = "Raw Hamming vs embedding cityblock"
         correlation_title = "Correlation between normalized raw-distance ball-spread curves"
+    elif args.comparison_kind == "baseline_refined_rng":
+        hamming_key = "rng_embedding_baseline"
+        embedding_key = "rng_embedding_refined"
+        comparison_key = "baseline_embedding_rng_vs_refined_embedding_rng"
+        file_token = "baseline_refined_embedding_rng"
+        radius_xlabel = "Normalized RNG graph-distance radius"
+        title_prefix = "Baseline vs refined embedding RNG"
+        correlation_title = "Correlation between baseline and refined RNG ball-spread curves"
     else:
         hamming_key = "rng_hamming"
         embedding_key = "rng_embedding"
